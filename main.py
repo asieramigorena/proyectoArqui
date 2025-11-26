@@ -1,6 +1,13 @@
+import random
+
 from gpiozero import LED, Button
 import threading, time, queue
 from multiprocessing import Process
+from fastapi import FastAPI
+from datetime import datetime
+
+app = FastAPI()
+
 
 button = Button(16, pull_up=False, bounce_time=0.05)
 ledr = LED(17)
@@ -8,29 +15,45 @@ ledv = LED(27)
 eventos = queue.Queue()
 R, V, A, N = range(4)
 estado = N
-"""
-def reaccion(button):
-    while True:
-        button.wait_for_press()
-        tiempo1 = time.time()
-        button.wait_for_release()
-        tiempo2 = time.time()
-        eventos.put()
-"""
+puntuacion = 1
+puntuaciones = []
+combinaciones = []
+respuesta = []
 
-def seleccion(button, name):
-    global estado
+def inicio():
+    for i in range(10):
+        combinaciones[i] = random.randint(0, 1)
+
+def seleccion(button):
     while True:
         button.wait_for_press()
         time1 = time.time()
         button.wait_for_release()
         time2 = time.time()
-        if time2 - time1 < 2:
-            estado  = (estado + 1) % 4
-        else:
-            eventos.put(estado)
+        #Larga = Verde // Corta = Roja
+        eventos.put(0) if (time2 - time1) < 2 else eventos.put(1)
 
-def led_inicio():
+def comprobacion():
+    global respuesta
+    global puntuacion
+    running = True
+    while running:
+        for i in range(puntuacion):
+            actual = eventos.get()
+            if actual != combinaciones[i]:
+                running = False
+                break
+            else:
+                respuesta.append(actual)
+        puntuacion += 1
+
+def juego():
+    t_seleccion = threading.Thread(target=seleccion, args=(button,))
+    t_logicaled = threading.Thread(target=logica_led, args=())
+    t_seleccion.start(); t_logicaled.start()
+    t_logicaled.join(); t_seleccion.join()
+
+def logica_led():
     global estado
     while True:
         match estado:
@@ -52,12 +75,8 @@ def led_inicio():
 if __name__ == '__main__':
     try:
         while True:
-            t_iniciobtn = threading.Thread(target=seleccion, args=(button, "BTN"))
-            t_inicioled = threading.Thread(target=led_inicio, args=())
-            t_iniciobtn.start(); t_inicioled.start()
-            seleccionado = eventos.get()
-            print(seleccionado)
-            t_inicioled.join(); t_inicioled.join()
+            inicio()
+
 
     except KeyboardInterrupt:
         print("\nTerminando ejecución, adios")
