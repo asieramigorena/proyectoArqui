@@ -50,6 +50,10 @@ def juego(cola_puntuacion):
                 ultimo = eventos.get()
                 otra_vez = True if ultimo == 0 else False
                 estado = n
+
+                if otra_vez:
+                    time.sleep(0.7)  # Pausa para ver el LED del principio (fix)
+                    
             except queue.Empty:
                 otra_vez = False
 
