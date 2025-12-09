@@ -57,7 +57,7 @@ def juego(cola_puntuacion):
                 ultimo = eventos.get(timeout=0.1)
                 otra_vez = (ultimo == 0)
             except queue.Empty:
-            otra_vez = False
+                otra_vez = False
 
             estado = n
 
