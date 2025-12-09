@@ -5,6 +5,8 @@ import threading, time, queue
 from multiprocessing import Process, Queue
 from fastapi import FastAPI
 from datetime import datetime
+import uvicorn
+import sqlite3
 
 colaApi = Queue()
 p_api = None
@@ -46,13 +48,14 @@ def juego(cola_puntuacion):
                 estado = a
                 semaforo_in.release()
                 ultimo = eventos.get()
-                otra_vez = True if ultimo == 1 else False
+                otra_vez = True if ultimo == 0 else False
                 estado = n
             except queue.Empty:
                 otra_vez = False
 
             evento.set()
             t_logica_led.join()
+            semaforo_in.release()
             t_seleccion.join()
 
     finally:
@@ -102,12 +105,13 @@ def comprobacion(combinaciones, cola_puntuacion):
         if running:
             puntuacion += 1
             cola_puntuacion.put(puntuacion)
-            if puntuacion == 10:
+            if puntuacion == 5:
                 print("Has ganado")
                 running = False
 
     fecha = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     cola_puntuacion.put(("Terminado", fecha, puntuacion))
+    guardar_resultado(fecha, puntuacion)  # <-- Guardar en DB
 
 def logica_led(ledr, ledv, evento):
     global estado
@@ -131,33 +135,76 @@ def logica_led(ledr, ledv, evento):
 
 def servidor(puntuaciones, cola_puntuacion):
     app = FastAPI()
-    actual = {"Valor" : 0}
-    while True:
-        try:
-            mensaje = cola_puntuacion.get_nowait()
-            if isinstance(mensaje, tuple) and mensaje[0] == "Terminado":
-                _, fecha, puntuacion = mensaje
-                puntuaciones[0].append(fecha)
-                puntuaciones[1].append(puntuacion)
-            else:
-                actual = mensaje
-        except:
-            pass
-        @app.get("/puntuacion")
-        def get_all():
-            for i in puntuaciones:
-                return {"Fecha": i[0], "Valor": i[1]}
+    actual = 0
+
+    @app.get("/puntuacion")
+    def get_puntuacion():
+        return {"actual": actual, "historial": obtener_historial()}
+        
+    def procesar_cola():
+        while True:
+            try:
+                mensaje = cola_puntuacion.get_nowait()
+                if isinstance(mensaje, tuple) and mensaje[0] == "Terminado":
+                    _, fecha, puntuacion = mensaje
+                    puntuaciones[0].append(fecha)
+                    puntuaciones[1].append(puntuacion)
+                else:
+                    actual = mensaje
+            except queue.Empty:
+                pass
+            time.sleep(0.1)
+            
+    threading.Thread(target=procesar_cola, daemon=True).start()
+
+    # Ejecutar FastAPI con uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+def crear_db():
+    conn = sqlite3.connect("historial_juego.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS historial (
+        fecha TEXT PRIMARY KEY,
+        puntuacion INTEGER)
+    """)
+    conn.commit()
+    conn.close()
+
+def guardar_resultado(fecha, puntuacion):
+    conn = sqlite3.connect("historial_juego.db")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO historial (fecha, puntuacion) VALUES (?, ?)", (fecha, puntuacion))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        print(f"Registro con fecha {fecha} ya existe")
+    finally:
+        conn.close()
+
+def obtener_historial():
+    conn = sqlite3.connect("historial_juego.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT fecha, puntuacion FROM historial ORDER BY fecha")
+    filas = cursor.fetchall()
+    conn.close()
+    fechas, puntuaciones = zip(*filas) if filas else ([], [])
+    return {"fechas": list(fechas), "puntuaciones": list(puntuaciones)}
 
 
 def main():
     global p_api, p_juego
+    crear_db() 
     puntuaciones = [[], []]
     cola_puntuacion = Queue()
     try:
         p_api = Process(target=servidor, args=(puntuaciones, cola_puntuacion))
         p_juego = Process(target=juego, args=(cola_puntuacion,))
-        # p_api.start()
+        p_api.start()
         p_juego.start()
+
+        p_api.join()
+        p_juego.join()
 
     except KeyboardInterrupt:
         print("\nTerminando ejecución, adios")
