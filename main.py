@@ -103,12 +103,14 @@ def comprobacion(combinaciones, puntuaciones, cola_puntuacion):
                 print("Has ganado")
                 running = False
 
-    fechas = [f for f in puntuaciones[0]]
-    puntos = [p for p in puntuaciones[1]]
+    fechas = list(puntuaciones[0])
+    puntos = list(puntuaciones[1])
+
     fechas.append(datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
     puntos.append(puntuacion)
-    puntuaciones[1] = fechas
-    puntuaciones[0] = puntos
+
+    puntuaciones[0] = fechas
+    puntuaciones[1] = puntos
 
 
 def logica_led(ledr, ledv, evento):
