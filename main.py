@@ -140,8 +140,10 @@ def servidor(puntuaciones, cola_puntuacion):
     @app.get("/puntuacion")
     def get_puntuacion():
         return {"actual": actual, "historial": obtener_historial()}
-        
+
+    # esto es un hilo para procesar la cola en segundo plano
     def procesar_cola():
+        nonlocal actual
         while True:
             try:
                 mensaje = cola_puntuacion.get_nowait()
