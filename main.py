@@ -7,16 +7,15 @@ from fastapi import FastAPI
 from datetime import datetime
 
 colaApi = Queue()
-pApi = None
-pJuego = None
+p_api = None
+p_juego = None
 
 eventos = queue.Queue()
 r, v, a, n = range(4)
 estado = n
-puntuacion = 1
 semaforo_in = threading.Semaphore(0)
 
-def juego(puntuaciones):
+def juego(puntuaciones, cola_puntuacion):
     button = Button(16, pull_up=False, bounce_time=0.05)
     ledr = LED(17)
     ledv = LED(27)
@@ -27,7 +26,7 @@ def juego(puntuaciones):
         evento = threading.Event()
 
         t_seleccion = threading.Thread(target=seleccion, args=(button, evento), daemon=True)
-        t_comprobacion = threading.Thread(target=comprobacion, args=(combinaciones, puntuaciones), daemon=True)
+        t_comprobacion = threading.Thread(target=comprobacion, args=(combinaciones, puntuaciones, cola_puntuacion), daemon=True)
         t_logica_led = threading.Thread(target=logica_led, args=(ledr, ledv, evento), daemon=True)
 
         t_seleccion.start()
@@ -66,8 +65,9 @@ def seleccion(button, evento):
         eventos.put(0) if (time2 - time1) < 2 else eventos.put(1)
 
 
-def comprobacion(combinaciones, puntuaciones):
-    global puntuacion, estado
+def comprobacion(combinaciones, puntuaciones, cola_puntuacion):
+    global estado
+    puntuacion = 1
     running = True
     while running:
         for i in range(puntuacion):
@@ -87,6 +87,7 @@ def comprobacion(combinaciones, puntuaciones):
                 break
         if running:
             puntuacion += 1
+            cola_puntuacion.put(puntuacion)
             if puntuacion == 10:
                 print("Has ganado")
                 running = False
@@ -114,11 +115,15 @@ def logica_led(ledr, ledv, evento):
                 print("Error en led_inicio")
 
 
-def servidor(puntuaciones):
-    global puntuacion
+def servidor(puntuaciones, cola_puntuacion):
     app = FastAPI()
+    actual = 0
     while True:
-        print("test")
+        try:
+            actual = cola_puntuacion.get_nowait()
+        except:
+            pass
+        print(f"Actual: {actual}")
         time.sleep(1)
 
 
@@ -126,11 +131,12 @@ def main():
     global p_api, p_juego
     manager = Manager()
     puntuaciones = manager.list([manager.list(), manager.list()])
+    cola_puntuacion = Queue()
     try:
         while True:
-            p_api = Process(target=servidor, args=(puntuaciones,))
-            p_juego = Process(target=juego, args=(puntuaciones,))
-            p_api.start()
+            p_api = Process(target=servidor, args=(puntuaciones, cola_puntuacion))
+            p_juego = Process(target=juego, args=(puntuaciones, cola_puntuacion))
+            #p_api.start()
             p_juego.start()
 
     except KeyboardInterrupt:
