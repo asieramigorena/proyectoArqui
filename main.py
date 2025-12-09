@@ -44,20 +44,22 @@ def juego(cola_puntuacion):
 
             t_comprobacion.join()
 
-            try:
-                estado = a
-                semaforo_in.release()
-                ultimo = eventos.get()
-                otra_vez = True if ultimo == 0 else False
-                estado = n
-                    
-            except queue.Empty:
-                otra_vez = False
-
+            # Primero paramos la seleccion para que no meta pulsaciones donde no toca
             evento.set()
-            t_logica_led.join()
-            semaforo_in.release()
             t_seleccion.join()
+            t_logica_led.join()    
+
+            # Reiniciar el juego safe
+            estado = a
+            semaforo_in.release()
+
+            try:
+                ultimo = eventos.get(timeout=0.1)
+                otra_vez = (ultimo == 0)
+            except queue.Empty:
+            otra_vez = False
+
+            estado = n
 
     finally:
         ledr.off()
