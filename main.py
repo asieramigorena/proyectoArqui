@@ -13,43 +13,54 @@ p_juego = None
 eventos = queue.Queue()
 r, v, a, n = range(4)
 estado = n
+puntuacion = 1
 semaforo_in = threading.Semaphore(0)
 
+
 def juego(puntuaciones, cola_puntuacion):
+    global estado
     button = Button(16, pull_up=False, bounce_time=0.05)
     ledr = LED(17)
     ledv = LED(27)
     otra_vez = True
-    while otra_vez:
-        combinaciones = [random.randint(0,1) for _ in range(10)]
+    try:
 
-        evento = threading.Event()
+        while otra_vez:
+            cola_puntuacion.put(1)
+            combinaciones = [random.randint(0, 1) for _ in range(10)]
 
-        t_seleccion = threading.Thread(target=seleccion, args=(button, evento), daemon=True)
-        t_comprobacion = threading.Thread(target=comprobacion, args=(combinaciones, puntuaciones, cola_puntuacion), daemon=True)
-        t_logica_led = threading.Thread(target=logica_led, args=(ledr, ledv, evento), daemon=True)
+            evento = threading.Event()
 
-        t_seleccion.start()
-        t_logica_led.start()
-        t_comprobacion.start()
+            t_seleccion = threading.Thread(target=seleccion, args=(button, evento), daemon=True)
+            t_comprobacion = threading.Thread(target=comprobacion, args=(combinaciones, puntuaciones, cola_puntuacion),
+                                          daemon=True)
+            t_logica_led = threading.Thread(target=logica_led, args=(ledr, ledv, evento), daemon=True)
 
-        t_comprobacion.join()
+            t_seleccion.start()
+            t_logica_led.start()
+            t_comprobacion.start()
 
-        try:
-            semaforo_in.release()
-            ultimo = eventos.get()
-            otra_vez = True if ultimo == 1 else False
-        except queue.Empty:
-            otra_vez = False
+            t_comprobacion.join()
 
-        evento.set()
-        t_logica_led.join()
-        t_seleccion.join()
+            try:
+                estado = a
+                semaforo_in.release()
+                ultimo = eventos.get()
+                otra_vez = True if ultimo == 1 else False
+                estado = n
+            except queue.Empty:
+                otra_vez = False
 
+            evento.set()
+            t_logica_led.join()
+            t_seleccion.join()
+
+    finally:
         ledr.off()
         ledv.off()
         ledr.close()
         ledv.close()
+        button.close()
 
 
 def seleccion(button, evento):
@@ -133,18 +144,20 @@ def main():
     puntuaciones = manager.list([manager.list(), manager.list()])
     cola_puntuacion = Queue()
     try:
-        while True:
-            p_api = Process(target=servidor, args=(puntuaciones, cola_puntuacion))
-            p_juego = Process(target=juego, args=(puntuaciones, cola_puntuacion))
-            #p_api.start()
-            p_juego.start()
+        p_api = Process(target=servidor, args=(puntuaciones, cola_puntuacion))
+        p_juego = Process(target=juego, args=(puntuaciones, cola_puntuacion))
+        # p_api.start()
+        p_juego.start()
 
     except KeyboardInterrupt:
         print("\nTerminando ejecución, adios")
-        p_api.terminate()
-        p_api.join()
-        p_juego.terminate()
-        p_juego.join()
+        if p_api and p_api.is_alive():
+            p_api.terminate()
+            p_api.join()
+        if p_juego and p_juego.is_alive():
+            p_juego.terminate()
+            p_juego.join()
+
 
 if __name__ == '__main__':
     main()
