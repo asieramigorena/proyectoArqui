@@ -93,7 +93,10 @@ def comprobacion(combinaciones, puntuaciones, cola_puntuacion):
         for i in range(puntuacion):
             semaforo_in.release()
             actual = eventos.get()
-            if actual != combinaciones[i]:
+            if actual == combinaciones[i]:
+                print("✔️ Correcto")
+            else:
+                print("❌ Incorrecto")
                 running = False
                 break
         if running:
