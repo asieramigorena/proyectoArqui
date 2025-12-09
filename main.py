@@ -2,34 +2,32 @@ import random
 
 from gpiozero import LED, Button
 import threading, time, queue
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Manager
 from fastapi import FastAPI
 from datetime import datetime
 
 colaApi = Queue()
-pApi, pJuego = None, None
+pApi = None
+pJuego = None
 
 eventos = queue.Queue()
 r, v, a, n = range(4)
 estado = n
 puntuacion = 1
-puntuaciones = [[], []]
+semaforo_in = threading.Semaphore(0)
 
-
-def juego():
+def juego(puntuaciones):
     button = Button(16, pull_up=False, bounce_time=0.05)
     ledr = LED(17)
     ledv = LED(27)
     otra_vez = True
     while otra_vez:
-        combinaciones = []
-        for i in range(10):
-            combinaciones[i] = random.randint(0, 1)
+        combinaciones = [random.randint(0,1) for _ in range(10)]
 
         evento = threading.Event()
 
         t_seleccion = threading.Thread(target=seleccion, args=(button, evento), daemon=True)
-        t_comprobacion = threading.Thread(target=comprobacion, args=(combinaciones,), daemon=True)
+        t_comprobacion = threading.Thread(target=comprobacion, args=(combinaciones, puntuaciones), daemon=True)
         t_logica_led = threading.Thread(target=logica_led, args=(ledr, ledv, evento), daemon=True)
 
         t_seleccion.start()
@@ -39,6 +37,7 @@ def juego():
         t_comprobacion.join()
 
         try:
+            semaforo_in.release()
             ultimo = eventos.get()
             otra_vez = True if ultimo == 1 else False
         except queue.Empty:
@@ -56,6 +55,9 @@ def juego():
 
 def seleccion(button, evento):
     while not evento.is_set():
+        semaforo_in.acquire()
+        if evento.is_set():
+            break
         button.wait_for_press()
         time1 = time.time()
         button.wait_for_release()
@@ -64,7 +66,7 @@ def seleccion(button, evento):
         eventos.put(0) if (time2 - time1) < 2 else eventos.put(1)
 
 
-def comprobacion(combinaciones):
+def comprobacion(combinaciones, puntuaciones):
     global puntuacion, estado
     running = True
     while running:
@@ -78,6 +80,7 @@ def comprobacion(combinaciones):
             estado = n
             time.sleep(0.3)
         for i in range(puntuacion):
+            semaforo_in.release()
             actual = eventos.get()
             if actual != combinaciones[i]:
                 running = False
@@ -111,7 +114,7 @@ def logica_led(ledr, ledv, evento):
                 print("Error en led_inicio")
 
 
-def servidor():
+def servidor(puntuaciones):
     global puntuacion
     app = FastAPI()
     while True:
@@ -121,14 +124,20 @@ def servidor():
 
 def main():
     global p_api, p_juego
+    manager = Manager()
+    puntuaciones = manager.list([manager.list(), manager.list()])
     try:
         while True:
-            p_api = Process(target=servidor)
-            p_juego = Process(target=juego)
+            p_api = Process(target=servidor, args=(puntuaciones,))
+            p_juego = Process(target=juego, args=(puntuaciones,))
+            p_api.start()
+            p_juego.start()
 
     except KeyboardInterrupt:
         print("\nTerminando ejecución, adios")
+        p_api.terminate()
         p_api.join()
+        p_juego.terminate()
         p_juego.join()
 
 if __name__ == '__main__':
