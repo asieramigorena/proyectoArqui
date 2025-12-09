@@ -13,6 +13,7 @@ p_juego = None
 eventos = queue.Queue()
 r, v, a, n = range(4)
 estado = n
+puntuacion = 1
 semaforo_in = threading.Semaphore(0)
 
 def juego(puntuaciones, cola_puntuacion):
