@@ -2,7 +2,7 @@ import random
 
 from gpiozero import LED, Button
 import threading, time, queue
-from multiprocessing import Process, Queue, Manager
+from multiprocessing import Process, Queue
 from fastapi import FastAPI
 from datetime import datetime
 
@@ -17,7 +17,7 @@ puntuacion = 1
 semaforo_in = threading.Semaphore(0)
 
 
-def juego(puntuaciones, cola_puntuacion):
+def juego(cola_puntuacion):
     global estado
     button = Button(16, pull_up=False, bounce_time=0.05)
     ledr = LED(17)
@@ -32,7 +32,7 @@ def juego(puntuaciones, cola_puntuacion):
             evento = threading.Event()
 
             t_seleccion = threading.Thread(target=seleccion, args=(button, evento), daemon=True)
-            t_comprobacion = threading.Thread(target=comprobacion, args=(combinaciones, puntuaciones, cola_puntuacion),
+            t_comprobacion = threading.Thread(target=comprobacion, args=(combinaciones, cola_puntuacion),
                                           daemon=True)
             t_logica_led = threading.Thread(target=logica_led, args=(ledr, ledv, evento), daemon=True)
 
@@ -76,7 +76,7 @@ def seleccion(button, evento):
         eventos.put(0) if (time2 - time1) < 2 else eventos.put(1)
 
 
-def comprobacion(combinaciones, puntuaciones, cola_puntuacion):
+def comprobacion(combinaciones, cola_puntuacion):
     global estado
     puntuacion = 1
     running = True
@@ -103,15 +103,8 @@ def comprobacion(combinaciones, puntuaciones, cola_puntuacion):
                 print("Has ganado")
                 running = False
 
-    fechas = list(puntuaciones[0])
-    puntos = list(puntuaciones[1])
-
-    fechas.append(datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-    puntos.append(puntuacion)
-
-    puntuaciones[0] = fechas
-    puntuaciones[1] = puntos
-
+    fecha = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    cola_puntuacion.put(("Terminado", fecha, puntuacion))
 
 def logica_led(ledr, ledv, evento):
     global estado
@@ -138,7 +131,13 @@ def servidor(puntuaciones, cola_puntuacion):
     actual = 0
     while True:
         try:
-            actual = cola_puntuacion.get_nowait()
+            mensaje = cola_puntuacion.get_nowait()
+            if mensaje[0] == "Terminado":
+                _, fecha, puntuacion = mensaje
+                puntuaciones[0].append(fecha)
+                puntuaciones[1].append(puntuacion)
+            else:
+                actual = mensaje
         except:
             pass
         print(f"Actual: {actual}")
@@ -147,12 +146,11 @@ def servidor(puntuaciones, cola_puntuacion):
 
 def main():
     global p_api, p_juego
-    manager = Manager()
-    puntuaciones = manager.list([manager.list(), manager.list()])
+    puntuaciones = [[], []]
     cola_puntuacion = Queue()
     try:
         p_api = Process(target=servidor, args=(puntuaciones, cola_puntuacion))
-        p_juego = Process(target=juego, args=(puntuaciones, cola_puntuacion))
+        p_juego = Process(target=juego, args=(cola_puntuacion,))
         # p_api.start()
         p_juego.start()
 
