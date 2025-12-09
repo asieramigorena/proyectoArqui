@@ -131,11 +131,11 @@ def logica_led(ledr, ledv, evento):
 
 def servidor(puntuaciones, cola_puntuacion):
     app = FastAPI()
-    actual = 0
+    actual = {"Valor" : 0}
     while True:
         try:
             mensaje = cola_puntuacion.get_nowait()
-            if mensaje[0] == "Terminado":
+            if isinstance(mensaje, tuple) and mensaje[0] == "Terminado":
                 _, fecha, puntuacion = mensaje
                 puntuaciones[0].append(fecha)
                 puntuaciones[1].append(puntuacion)
@@ -143,8 +143,10 @@ def servidor(puntuaciones, cola_puntuacion):
                 actual = mensaje
         except:
             pass
-        print(f"Actual: {actual}")
-        time.sleep(1)
+        @app.get("/puntuacion")
+        def get_all():
+            for i in puntuaciones:
+                return {"Fecha": i[0], "Valor": i[1]}
 
 
 def main():
